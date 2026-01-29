@@ -81,8 +81,17 @@ export async function onRequest(context) {
 
         return new Response(renderAdminDashboard(LINKS_DATA, FRIENDS_DATA, statsMap, TITLE, selectedMonth, SHARED_BG_HTML, FONT_STACK, RAW_IMG), { headers: { "content-type": "text/html;charset=UTF-8" } });
       } catch (dbErr) {
-        console.error('DB Error in admin dashboard:', dbErr);
-        return new Response('Database error occurred', { status: 500 });
+        const errorDetail = `
+        🛑 错误详情诊断:
+        --------------------------
+        1. 报错信息: ${dbErr.message}
+        2. env.db 状态: ${env.db ? '✅ 已绑定' : '❌ 未定义 (请检查后台 D1 Bindings 变量名是否为 db)'}
+        --------------------------
+        `;
+        return new Response(errorDetail, { 
+          status: 500, 
+          headers: { 'content-type': 'text/plain;charset=UTF-8' } 
+        });
       }
     }
 
@@ -335,8 +344,18 @@ function renderNewNavHTML(TITLE, SUBTITLE, BG_IMG_URL, CONTACT, LINKS, FRIENDS) 
 
 /** * ✨ 管理后台 */
 function renderAdminDashboard(LINKS, FRIENDS, statsMap, T, m, BG, FS, IMG) {
-// 1. 收集所有当前有效的 ID (主链接 + 友链)
-  const activeIds = new Set([ ...LINKS.map(i => i.id), ...FRIENDS.map(i => i.id) ]);
+  // --- 🟢 修复开始：在函数内部重新定义时间变量 ---
+  const now = new Date(new Date().getTime() + 8 * 3600000);
+  const currYear = now.getFullYear().toString();
+  const currMonth = (now.getMonth() + 1).toString().padStart(2, '0');
+  const dateKey = `${currYear}_${currMonth}`;
+  // --- 🟢 修复结束 ---
+
+  // 1. 收集所有当前有效的 ID (主链接 + 友链)
+  // 注意：防止 LINKS 或 FRIENDS 为空时的报错
+  const safeLinks = Array.isArray(LINKS) ? LINKS : [];
+  const safeFriends = Array.isArray(FRIENDS) ? FRIENDS : [];
+  const activeIds = new Set([ ...safeLinks.map(i => i.id), ...safeFriends.map(i => i.id) ]);
   
   let totalClicks = 0;
   // 2. 只统计当前有效 ID 的点击数
@@ -347,16 +366,16 @@ function renderAdminDashboard(LINKS, FRIENDS, statsMap, T, m, BG, FS, IMG) {
   }
 
   // 计算今日点击数
-  const today = new Date();
+  const today = new Date(new Date().getTime() + 8 * 3600000); // UTC+8
   const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
   
-  const resourceHtml = LINKS.map((item, i) => {
+  const resourceHtml = safeLinks.map((item, i) => {
     const stat = statsMap.get(item.id) || { total_clicks: 0, month_clicks: 0, year_clicks: 0, last_time: '' };
     const p = totalClicks > 0 ? ((stat.total_clicks / totalClicks) * 100).toFixed(1) : 0;
     const timeDisplay = stat.last_time ? stat.last_time : '暂无记录';
     
-    // 计算今日点击数
-    const todayClicks = stat.last_time && stat.last_time.startsWith(todayStr) ? 1 : 0;
+    // 计算今日点击数 (简单的字符串匹配)
+    const todayClicks = stat.last_time && stat.last_time.startsWith(todayStr) ? stat.day_clicks || 0 : 0;
     
     return `
     <div class="glass-panel card" onclick="openLog('${item.id}','${m}','${item.name}')" style="animation-delay:${i * 0.05}s">
@@ -379,9 +398,8 @@ function renderAdminDashboard(LINKS, FRIENDS, statsMap, T, m, BG, FS, IMG) {
     </div>`;
   }).join('');
 
-  // 友链后台统计：改为使用 item.id
-  const friendHtml = FRIENDS.map((item) => {
-    const id = item.id; // 直接使用配置中的 ID
+  const friendHtml = safeFriends.map((item) => {
+    const id = item.id;
     const stat = statsMap.get(id) || { total_clicks: 0, month_clicks: 0, year_clicks: 0, last_time: '' };
     let simpleTime = '-';
     if (stat.last_time && stat.last_time.includes(' ')) {
@@ -537,15 +555,14 @@ function renderAdminDashboard(LINKS, FRIENDS, statsMap, T, m, BG, FS, IMG) {
         <a href="/admin/logout" style="color:#f87171;font-size:0.85rem;text-decoration:none;font-weight:700;margin-top:5px">安全退出</a>
     </header>
 
-    <!-- 顶部统计面板 -->
     <div class="stats-panel">
         <div class="stat-card">
             <div class="stat-label">总项目数</div>
-            <div class="stat-value">${LINKS.length}</div>
+            <div class="stat-value">${safeLinks.length}</div>
         </div>
         <div class="stat-card">
             <div class="stat-label">友链数</div>
-            <div class="stat-value">${FRIENDS.length}</div>
+            <div class="stat-value">${safeFriends.length}</div>
         </div>
         <div class="stat-card">
             <div class="stat-label">总点击量</div>
@@ -557,7 +574,6 @@ function renderAdminDashboard(LINKS, FRIENDS, statsMap, T, m, BG, FS, IMG) {
         </div>
     </div>
 
-    <!-- 月份选择器 -->
     <div class="month-selector">
         <a href="/admin" class="month-btn ${m === dateKey ? 'active' : ''}">当月</a>
         <a href="/admin?m=${currYear}_${String(Number(currMonth)-1).padStart(2, '0')}" class="month-btn">上月</a>
