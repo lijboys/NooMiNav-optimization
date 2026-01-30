@@ -63,7 +63,7 @@ export async function onRequest(context) {
         }
         
         if (password === ADMIN_PASS) {
-          return new Response(null, { status: 302, headers: { 'Location': '/admin', 'Set-Cookie': `${COOKIE_NAME}=true; Path=/; Max-Age=86400; HttpOnly; SameSite=Strict` } });
+          return new Response(null, { status: 302, headers: { 'Location': '/admin', 'Set-Cookie': `${COOKIE_NAME}=true; Path=/; Max-Age=2592000; HttpOnly; SameSite=Strict` } });
         } else {
           return new Response(renderLoginPageV10(TITLE, SHARED_BG_HTML, FONT_STACK, RAW_IMG, '密码错误'), { headers: { "content-type": "text/html;charset=UTF-8" } });
         }
