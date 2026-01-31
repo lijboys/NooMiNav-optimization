@@ -7,8 +7,12 @@ export async function onRequest(context) {
   const TITLE = env.TITLE || "云端加速 · 精选导航";
   const SUBTITLE = env.SUBTITLE || "优质资源推荐 · 随时畅联";
   const ADMIN_PASS = env.admin || "123456"; 
-  const RAW_IMG = env.img || "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?q=80&w=2073"; 
+  
+  const DEFAULT_IMG = "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?q=80&w=2073";
+  const IMG_Rr = (env.img || DEFAULT_IMG).split(',');
+  const RAW_IMG = IMG_Rr[Math.floor(Math.random() * IMG_Rr.length)].trim();
   const BG_CSS = RAW_IMG ? `url('${RAW_IMG}')` : 'none';
+  
   const CONTACT_URL = env.CONTACT_URL || "https://t.me/Fuzzy_Fbot";
 
   const getJson = (k) => { try { return env[k] ? JSON.parse(env[k]) : []; } catch(e) { return []; } };
