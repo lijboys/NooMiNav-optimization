@@ -1,7 +1,7 @@
 export async function onRequest(context) {
   const { request, env } = context;
   const url = new URL(request.url);
-  const COOKIE_NAME = "nav_session_v10_notice";
+  const COOKIE_NAME = "nav_session_v10_1_ui";
 
   // --- 1. 配置区域 ---
   const TITLE = env.TITLE || "云端加速 · 精选导航";
@@ -9,21 +9,17 @@ export async function onRequest(context) {
   const ADMIN_PASS = env.admin || "123456";
   const CONTACT_URL = env.CONTACT_URL || "https://t.me/Fuzzy_Fbot";
 
-  // 🖼️ 图像配置 (V9.9.1逻辑: 修复多图轮换 + Base64支持 + 日更轮换)
+  // 🖼️ 图像配置 (多图轮换 + Base64支持 + 日更机制)
   const DEFAULT_IMG = "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?q=80&w=2073";
-  
   let RAW_IMG = DEFAULT_IMG;
   
   if (env.img) {
       const imgStr = env.img.trim();
-      // 智能判断：如果是 Base64 (data:开头)，则视为单张图片，不分割
       if (imgStr.startsWith('data:')) {
           RAW_IMG = imgStr;
       } else {
-          // 否则按逗号分割，支持多图轮换
           const list = imgStr.split(',').map(s => s.trim()).filter(s => s);
           if (list.length > 0) {
-              // 改为每天轮换一次 (基于 UTC+8 时间)
               const dayIndex = Math.floor((new Date().getTime() + 8 * 3600000) / 86400000);
               RAW_IMG = list[dayIndex % list.length];
           }
@@ -34,7 +30,7 @@ export async function onRequest(context) {
   const LINKS_DATA = getJson('LINKS');
   const FRIENDS_DATA = getJson('FRIENDS');
 
-  // 时间工具 (UTC+8)
+  // 时间工具
   const getNow = () => new Date(new Date().getTime() + 8 * 3600000);
   const now = getNow();
   const currYear = now.getFullYear().toString();
@@ -79,7 +75,6 @@ export async function onRequest(context) {
     // --- 后台管理页面 ---
     if (url.pathname === "/admin") {
       const cookie = request.headers.get('Cookie') || '';
-      // 登录处理
       if (request.method === 'POST') {
         const formData = await request.formData();
         const password = formData.get('password') || '';
@@ -92,12 +87,10 @@ export async function onRequest(context) {
           return new Response(renderLoginPageV10(TITLE, FONT_STACK, RAW_IMG, DEFAULT_IMG, '密码错误'), { headers: { "content-type": "text/html;charset=UTF-8" } });
         }
       }
-      // 未登录
       if (!cookie.includes(`${COOKIE_NAME}=true`)) {
         return new Response(renderLoginPageV10(TITLE, FONT_STACK, RAW_IMG, DEFAULT_IMG, ''), { headers: { "content-type": "text/html;charset=UTF-8" } });
       }
 
-      // 后台数据查询
       const selectedDateOrMonth = getSafeParam(url.searchParams, 'm', dateKey);
       const currentMonthKey = selectedDateOrMonth.replace('-', '_').substring(0, 7); 
       const queryParam = selectedDateOrMonth.replace('_', '-'); 
@@ -148,7 +141,7 @@ export async function onRequest(context) {
 
     if (url.pathname === "/admin/logout") return new Response(null, { status: 302, headers: { 'Location': '/admin', 'Set-Cookie': `${COOKIE_NAME}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Strict` } });
 
-    // --- 跳转逻辑 ---
+    // --- 跳转 ---
     if (url.pathname.startsWith("/go/")) {
       const parts = url.pathname.split("/").filter(Boolean);
       if (parts.length < 2) return new Response('Invalid URL', { status: 400 });
@@ -173,7 +166,7 @@ export async function onRequest(context) {
       return Response.redirect(friend.url, 302);
     }
 
-    // --- 前台主页 ---
+    // --- 前台 ---
     return new Response(renderNewNavHTML(TITLE, SUBTITLE, RAW_IMG, DEFAULT_IMG, CONTACT_URL, LINKS_DATA, FRIENDS_DATA, FONT_STACK), { headers: { "content-type": "text/html;charset=UTF-8" } });
 
   } catch (err) {
@@ -198,17 +191,15 @@ async function recordClick(db, id, name, type, y, m, timeStr, request) {
   } catch (e) { console.error("Record click err:", e); }
 }
 
-// 辅助函数: 生成 Head
 function getHead(t, fs) {
   return `<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${t}</title><style>:root{--glass:rgba(15,23,42,0.6);--border:rgba(255,255,255,0.15);--text-shadow:0 2px 4px rgba(0,0,0,0.8)}body{margin:0;min-height:100vh;font-family:${fs};color:#fff;display:flex;justify-content:center;align-items:center}.glass-panel{background:var(--glass);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);border:1px solid var(--border);box-shadow:0 8px 32px rgba(0,0,0,0.2);border-radius:16px}h1,div,span,a{text-shadow:var(--text-shadow)}</style>`;
 }
 
-// 样式生成函数：处理多重背景
 function getBgStyle(userImg, defaultImg) {
   return `background-image: url('${userImg}'), url('${defaultImg}'); background-size: cover; background-position: center; background-attachment: fixed; background-repeat: no-repeat;`;
 }
 
-// --- 后台仪表盘渲染 ---
+// --- 后台仪表盘 ---
 function renderAdminDashboard(LINKS, FRIENDS, statsMap, dailyMap, periodMap, monthContextMap, monthTotalClicks, T, m, isDayMode, FS, IMG, DEF_IMG, dateKey, todayStr) {
   const safeLinks = Array.isArray(LINKS) ? LINKS : [];
   const safeFriends = Array.isArray(FRIENDS) ? FRIENDS : [];
@@ -427,7 +418,7 @@ function renderLoginPageV10(T, FS, IMG, DEF_IMG, errorMsg = '') {
   </body></html>`;
 }
 
-// 🟢 前台渲染 (增强版：新增公告栏)
+// 🟢 前台渲染 (文字美化增强版)
 function renderNewNavHTML(TITLE, SUBTITLE, BG_IMG_URL, DEF_IMG, CONTACT, LINKS, FRIENDS, FONT_STACK) {
   const safeLinks = Array.isArray(LINKS) ? LINKS : [];
   const safeFriends = Array.isArray(FRIENDS) ? FRIENDS : [];
@@ -474,35 +465,53 @@ function renderNewNavHTML(TITLE, SUBTITLE, BG_IMG_URL, DEF_IMG, CONTACT, LINKS, 
     .theme-toggle { position: fixed; top: 20px; right: 20px; width: 50px; height: 50px; border-radius: 50%; background: rgba(255,255,255,0.2); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.2); display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 100; color: white; font-size: 1.2rem; }
     .no-result { text-align: center; padding: 40px 0; color: var(--text-sub); font-size: 1.2rem; display: none; }
     
-    /* 🟢 新增：公告栏样式 */
+    /* 🟢 新增：公告栏美化样式 */
     .notice-card {
       margin-bottom: 30px;
-      padding: 20px 25px;
+      padding: 22px 28px;
       text-align: left;
-      /* 左侧警示边框 */
-      border-left: 5px solid #f43f5e; 
-      /* 柔和的红色渐变背景，营造警示感 */
-      background: linear-gradient(90deg, rgba(244, 63, 94, 0.15) 0%, rgba(255, 255, 255, 0.05) 100%);
+      /* 柔和的红粉色渐变背景 */
+      background: linear-gradient(135deg, rgba(244, 63, 94, 0.1) 0%, rgba(30, 41, 59, 0.4) 100%);
+      border-left: 4px solid #fb7185;
+      backdrop-filter: blur(20px);
       animation: fadeInUp 0.8s forwards;
       animation-delay: 0.05s;
     }
     .notice-title {
-      font-size: 1.1rem;
+      font-size: 1.15rem;
       font-weight: 800;
-      color: #fb7185;
-      margin-bottom: 12px;
+      /* 渐变文字效果 */
+      background: linear-gradient(to right, #fb7185, #c084fc);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 15px;
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 10px;
+      text-shadow: none; /* 渐变字不需要阴影 */
+    }
+    /* 心跳图标不需要渐变色，单独重置 */
+    .notice-title span {
+      -webkit-text-fill-color: initial; 
     }
     .notice-content {
       font-size: 0.95rem;
-      line-height: 1.6;
-      color: #f1f5f9;
-      text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+      line-height: 1.8; /* 增加行距，更易读 */
+      color: rgba(255, 255, 255, 0.9);
+      letter-spacing: 0.5px;
     }
-    .notice-content p {
-      margin: 4px 0;
+    .notice-highlight {
+      color: #fcd34d; /* 醒目的金黄色 */
+      font-weight: 700;
+      padding: 0 4px;
+      background: rgba(252, 211, 77, 0.1); /* 微弱的背景色衬托 */
+      border-radius: 4px;
+    }
+    .notice-sub {
+      margin-top: 8px;
+      font-size: 0.9rem;
+      opacity: 0.8;
+      font-style: italic; /* 斜体增加语气的委婉感 */
     }
     /* 心跳动画 */
     .heart-beat {
@@ -587,14 +596,22 @@ function renderNewNavHTML(TITLE, SUBTITLE, BG_IMG_URL, DEF_IMG, CONTACT, LINKS, 
         <input type="text" class="search-box" placeholder="搜索导航项目..." />
     </div>
 
-    <!-- 🟢 新增：温馨提示公告栏 -->
+    <!-- 🟢 新增：美化后的温馨提示 -->
     <div class="glass-card notice-card">
         <div class="notice-title">
             <span class="heart-beat">❤️</span> 温馨提示
         </div>
         <div class="notice-content">
-            <p>所有 机场 均属灰产</p>
-            <p>所有的产品 （包括我推荐的） 均有不可永续和跑路的风险，恳请小伙伴们下单之前仔细斟酌，再三考虑，适合自己的就是最好的，切勿冲动下单😇</p>
+            <div style="margin-bottom:8px">
+                🚫 所有机场均属 <span class="notice-highlight">灰产</span>
+            </div>
+            <div style="margin-bottom:8px">
+                ⚠️ 所有产品（包括我推荐的）均有 <span class="notice-highlight">不可永续</span> 和 <span class="notice-highlight">跑路风险</span>
+            </div>
+            <div class="notice-sub">
+                恳请小伙伴们下单之前仔细斟酌，再三考虑。<br>
+                适合自己的就是最好的，<span style="color:#fff;font-weight:bold;border-bottom:1px dashed #fff">切勿冲动下单</span> 😇
+            </div>
         </div>
     </div>
 
