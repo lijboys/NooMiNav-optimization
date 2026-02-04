@@ -1,7 +1,7 @@
 export async function onRequest(context) {
   const { request, env } = context;
   const url = new URL(request.url);
-  const COOKIE_NAME = "nav_session_v99_rotate_fix";
+  const COOKIE_NAME = "nav_session_v10_notice";
 
   // --- 1. 配置区域 ---
   const TITLE = env.TITLE || "云端加速 · 精选导航";
@@ -9,7 +9,7 @@ export async function onRequest(context) {
   const ADMIN_PASS = env.admin || "123456";
   const CONTACT_URL = env.CONTACT_URL || "https://t.me/Fuzzy_Fbot";
 
-  // 🖼️ 图像配置 (修复多图轮换 + Base64支持)
+  // 🖼️ 图像配置 (V9.9.1逻辑: 修复多图轮换 + Base64支持 + 日更轮换)
   const DEFAULT_IMG = "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?q=80&w=2073";
   
   let RAW_IMG = DEFAULT_IMG;
@@ -23,8 +23,7 @@ export async function onRequest(context) {
           // 否则按逗号分割，支持多图轮换
           const list = imgStr.split(',').map(s => s.trim()).filter(s => s);
           if (list.length > 0) {
-              // 🟢 修改点：改为每天轮换一次 (基于 UTC+8 时间)
-              // 计算当前时间相对于 Epoch 的天数，保证同一天内 index 不变
+              // 改为每天轮换一次 (基于 UTC+8 时间)
               const dayIndex = Math.floor((new Date().getTime() + 8 * 3600000) / 86400000);
               RAW_IMG = list[dayIndex % list.length];
           }
@@ -98,9 +97,7 @@ export async function onRequest(context) {
         return new Response(renderLoginPageV10(TITLE, FONT_STACK, RAW_IMG, DEFAULT_IMG, ''), { headers: { "content-type": "text/html;charset=UTF-8" } });
       }
 
-      // -------------------------------------------------------------
       // 后台数据查询
-      // -------------------------------------------------------------
       const selectedDateOrMonth = getSafeParam(url.searchParams, 'm', dateKey);
       const currentMonthKey = selectedDateOrMonth.replace('-', '_').substring(0, 7); 
       const queryParam = selectedDateOrMonth.replace('_', '-'); 
@@ -206,14 +203,13 @@ function getHead(t, fs) {
   return `<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${t}</title><style>:root{--glass:rgba(15,23,42,0.6);--border:rgba(255,255,255,0.15);--text-shadow:0 2px 4px rgba(0,0,0,0.8)}body{margin:0;min-height:100vh;font-family:${fs};color:#fff;display:flex;justify-content:center;align-items:center}.glass-panel{background:var(--glass);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);border:1px solid var(--border);box-shadow:0 8px 32px rgba(0,0,0,0.2);border-radius:16px}h1,div,span,a{text-shadow:var(--text-shadow)}</style>`;
 }
 
-// 🟢 样式生成函数：处理多重背景
+// 样式生成函数：处理多重背景
 function getBgStyle(userImg, defaultImg) {
   return `background-image: url('${userImg}'), url('${defaultImg}'); background-size: cover; background-position: center; background-attachment: fixed; background-repeat: no-repeat;`;
 }
 
 // --- 后台仪表盘渲染 ---
 function renderAdminDashboard(LINKS, FRIENDS, statsMap, dailyMap, periodMap, monthContextMap, monthTotalClicks, T, m, isDayMode, FS, IMG, DEF_IMG, dateKey, todayStr) {
-  // ... (数据计算逻辑保持 V9.6 不变) ...
   const safeLinks = Array.isArray(LINKS) ? LINKS : [];
   const safeFriends = Array.isArray(FRIENDS) ? FRIENDS : [];
   const activeIds = new Set([ ...safeLinks.map(i => i.id), ...safeFriends.map(i => i.id) ]);
@@ -221,6 +217,7 @@ function renderAdminDashboard(LINKS, FRIENDS, statsMap, dailyMap, periodMap, mon
   for (let v of statsMap.values()) { if (activeIds.has(v.id)) historyTotal += (v.total_clicks || 0); }
   let viewTotalDenominator = 0;
   if (isDayMode) { for(let c of monthContextMap.values()) viewTotalDenominator += c; } else { for(let c of periodMap.values()) viewTotalDenominator += c; }
+  
   let prevDay = m, nextDay = m;
   let prevMonthStr = "", nextMonthStr = "";
   try {
@@ -430,7 +427,7 @@ function renderLoginPageV10(T, FS, IMG, DEF_IMG, errorMsg = '') {
   </body></html>`;
 }
 
-// 前台渲染 (复原：移除纯色背景)
+// 🟢 前台渲染 (增强版：新增公告栏)
 function renderNewNavHTML(TITLE, SUBTITLE, BG_IMG_URL, DEF_IMG, CONTACT, LINKS, FRIENDS, FONT_STACK) {
   const safeLinks = Array.isArray(LINKS) ? LINKS : [];
   const safeFriends = Array.isArray(FRIENDS) ? FRIENDS : [];
@@ -442,7 +439,7 @@ function renderNewNavHTML(TITLE, SUBTITLE, BG_IMG_URL, DEF_IMG, CONTACT, LINKS, 
   const friendsHtml = safeFriends.map((f) => `<a href="/fgo/${f.id}" target="_blank" class="glass-card partner-card">${f.name}</a>`).join('');
 
   return `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${TITLE}</title><style>
-    :root { --glass: rgba(255,255,255,0.15); --border: rgba(255,255,255,0.2); --text-main: #f1f5f9; --text-sub: #e2e8f0; --warning: #fcd34d; --primary: #8b5cf6; --backdrop-blur: 16px; --transition: 0.3s ease; }
+    :root { --glass: rgba(255,255,255,0.15); --border: rgba(255,255,255,0.2); --text-main: #fff; --text-sub: #e2e8f0; --warning: #fcd34d; --primary: #8b5cf6; --backdrop-blur: 16px; --transition: 0.3s ease; }
     .dark-theme { --glass: rgba(15,23,42,0.8); --border: rgba(255,255,255,0.1); }
     * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
     body { 
@@ -451,7 +448,6 @@ function renderNewNavHTML(TITLE, SUBTITLE, BG_IMG_URL, DEF_IMG, CONTACT, LINKS, 
       min-height: 100vh; display: flex; flex-direction: column; align-items: center; 
       padding: 40px 20px 100px; position: relative; transition: var(--transition);
     }
-    /* 移除 .dark-theme 的 background-color 覆盖，以保持背景图可见 */
     .container { width: 100%; max-width: 1200px; }
     .glass-card { background: var(--glass); backdrop-filter: blur(var(--backdrop-blur)); -webkit-backdrop-filter: blur(var(--backdrop-blur)); border: 1px solid var(--border); border-radius: 20px; box-shadow: 0 8px 32px rgba(0,0,0,0.15); transition: var(--transition); }
     .header { text-align: center; padding: 40px 20px; margin-bottom: 30px; }
@@ -477,6 +473,47 @@ function renderNewNavHTML(TITLE, SUBTITLE, BG_IMG_URL, DEF_IMG, CONTACT, LINKS, 
     .search-box:focus { outline: none; background: rgba(255,255,255,0.3); }
     .theme-toggle { position: fixed; top: 20px; right: 20px; width: 50px; height: 50px; border-radius: 50%; background: rgba(255,255,255,0.2); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.2); display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 100; color: white; font-size: 1.2rem; }
     .no-result { text-align: center; padding: 40px 0; color: var(--text-sub); font-size: 1.2rem; display: none; }
+    
+    /* 🟢 新增：公告栏样式 */
+    .notice-card {
+      margin-bottom: 30px;
+      padding: 20px 25px;
+      text-align: left;
+      /* 左侧警示边框 */
+      border-left: 5px solid #f43f5e; 
+      /* 柔和的红色渐变背景，营造警示感 */
+      background: linear-gradient(90deg, rgba(244, 63, 94, 0.15) 0%, rgba(255, 255, 255, 0.05) 100%);
+      animation: fadeInUp 0.8s forwards;
+      animation-delay: 0.05s;
+    }
+    .notice-title {
+      font-size: 1.1rem;
+      font-weight: 800;
+      color: #fb7185;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .notice-content {
+      font-size: 0.95rem;
+      line-height: 1.6;
+      color: #f1f5f9;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+    }
+    .notice-content p {
+      margin: 4px 0;
+    }
+    /* 心跳动画 */
+    .heart-beat {
+      display: inline-block;
+      animation: beat 1.5s infinite ease-in-out;
+    }
+    @keyframes beat {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.25); }
+    }
+
     @keyframes fadeInUp { to { opacity: 1; transform: translateY(0); } }
     @media (max-width: 768px) { 
       .header h1 { font-size: 2.2rem; }
@@ -485,6 +522,14 @@ function renderNewNavHTML(TITLE, SUBTITLE, BG_IMG_URL, DEF_IMG, CONTACT, LINKS, 
       .resource-card-wrap { height: auto; min-height: 100px; }
       .grid-partners { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
       .fab-support { padding: 10px 25px; font-size: 0.9rem; }
+    }
+    @media (max-width: 480px) { 
+      .header { padding: 30px 15px; }
+      .header h1 { font-size: 1.8rem; }
+      .section-title { font-size: 0.9rem; }
+      .resource-card-wrap { flex-direction: column; height: auto; }
+      .resource-main-link { flex-direction: row; }
+      .tag-backup { width: 100%; writing-mode: horizontal; text-align: center; padding: 5px 0; }
     }
   </style>
   <script>
@@ -537,7 +582,22 @@ function renderNewNavHTML(TITLE, SUBTITLE, BG_IMG_URL, DEF_IMG, CONTACT, LINKS, 
   <button class="theme-toggle" title="切换主题">🌙</button>
   <div class="container">
     <div class="header glass-card"><h1>${TITLE}</h1><p>${SUBTITLE}</p></div>
-    <div class="search-container"><input type="text" class="search-box" placeholder="搜索导航项目..." /></div>
+    
+    <div class="search-container">
+        <input type="text" class="search-box" placeholder="搜索导航项目..." />
+    </div>
+
+    <!-- 🟢 新增：温馨提示公告栏 -->
+    <div class="glass-card notice-card">
+        <div class="notice-title">
+            <span class="heart-beat">❤️</span> 温馨提示
+        </div>
+        <div class="notice-content">
+            <p>所有 机场 均属灰产</p>
+            <p>所有的产品 （包括我推荐的） 均有不可永续和跑路的风险，恳请小伙伴们下单之前仔细斟酌，再三考虑，适合自己的就是最好的，切勿冲动下单😇</p>
+        </div>
+    </div>
+
     <div class="section-title">💎 精选</div>
     <div class="grid-resources">${cardsHtml}</div>
     <div class="section-title">🔗 友链</div>
