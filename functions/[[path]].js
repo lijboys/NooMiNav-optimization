@@ -1,5 +1,5 @@
 // ============================================================================
-// NooMiNav V13.1 UI Refresh
+// NooMiNav V13.2 UI Refresh Pro
 // 双擎驱动适配器：支持 Cloudflare Workers 和 Pages
 // ============================================================================
 export default { async fetch(request, env, ctx) { const app = new NooMiNav(request, env, ctx); return app.handle(); } };
@@ -47,6 +47,7 @@ class NooMiNav {
         }
 
         this.ADMIN_PATH = '/' + (this.env.admin || 'admin').replace(/^\//, '');
+
         this.config = {
             admin_pass: this.dbSettings.admin_pass || "123456",
             title: this.dbSettings.title || this.env.TITLE || "云端加速 · 精选导航",
@@ -57,7 +58,15 @@ class NooMiNav {
             host: (this.dbSettings.host || this.env.host || this.url.origin).replace(/\/$/, ''),
             notice: this.dbSettings.notice !== undefined
                 ? this.dbSettings.notice
-                : (this.env.notice || "<div style=\"margin-bottom:8px\">🎉 欢迎使用 FlarePortal 极简导航！</div><div class=\"notice-sub\">您可以在后台「系统设置」中修改此处的公告内容，支持 HTML 标签。如果清空内容，公告板将自动隐藏。</div>")
+                : (this.env.notice || "<div style=\"margin-bottom:8px\">🎉 欢迎使用 FlarePortal 极简导航！</div><div class=\"notice-sub\">您可以在后台「系统设置」中修改此处的公告内容，支持 HTML 标签。如果清空内容，公告板将自动隐藏。</div>"),
+
+            // Promo / 广告卡配置
+            promo_enable: this.dbSettings.promo_enable !== undefined ? this.dbSettings.promo_enable : (this.env.promo_enable || "1"),
+            promo_badge: this.dbSettings.promo_badge !== undefined ? this.dbSettings.promo_badge : (this.env.promo_badge || "免费域名可托管 CF"),
+            promo_title: this.dbSettings.promo_title !== undefined ? this.dbSettings.promo_title : (this.env.promo_title || "本站域名服务由 DigitalPlat FreeDomain 提供支持"),
+            promo_desc: this.dbSettings.promo_desc !== undefined ? this.dbSettings.promo_desc : (this.env.promo_desc || "可免费申请域名，支持 Cloudflare 托管接入，适合导航站与个人项目使用。"),
+            promo_url: this.dbSettings.promo_url !== undefined ? this.dbSettings.promo_url : (this.env.promo_url || "https://dash.domain.digitalplat.org/signup?ref=s8ywnMQRkL"),
+            promo_format: this.dbSettings.promo_format !== undefined ? this.dbSettings.promo_format : (this.env.promo_format || "markdown")
         };
 
         if (this.config.push && !this.config.push.endsWith('/contact')) {
@@ -318,6 +327,104 @@ class NooMiNav {
 
     getSafeParam(sp, key, def = '') { return sp.get(key)?.trim() || def; }
 
+    safeCssUrl(url) {
+        return String(url || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    }
+
+    getBgShellStyle() {
+        return `background-color:#0f172a;background-size:cover;background-position:center;background-repeat:no-repeat;`;
+    }
+
+    render_BgRuntimeScript() {
+        const primary = this.safeCssUrl(this.config.img);
+        const fallback = this.safeCssUrl(this.DEFAULT_IMG);
+        return `<script>
+(function(){
+  if(window.__bgInitDone) return;
+  window.__bgInitDone = true;
+  const body = document.body;
+  const primary = '${primary}';
+  const fallback = '${fallback}';
+  function applyBg(url){
+    body.style.backgroundImage = "linear-gradient(rgba(2,6,23,0.30), rgba(2,6,23,0.40)), url('" + url + "')";
+  }
+  function loadImage(url, ok, fail){
+    if(!url){ fail && fail(); return; }
+    const img = new Image();
+    img.onload = () => ok && ok(url);
+    img.onerror = () => fail && fail();
+    img.referrerPolicy = 'no-referrer';
+    img.src = url;
+  }
+  applyBg(fallback);
+  if(primary && primary !== fallback){
+    loadImage(primary, applyBg, () => loadImage(fallback, applyBg));
+  } else {
+    loadImage(fallback, applyBg);
+  }
+})();
+</script>`;
+    }
+
+    escapeHtml(str = '') {
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    renderRichContent(content = '', format = 'html') {
+        const raw = String(content || '');
+        const mode = String(format || 'html').toLowerCase();
+
+        if (mode === 'html') {
+            return raw;
+        }
+
+        // 轻量 Markdown 渲染
+        let s = this.escapeHtml(raw);
+
+        s = s.replace(/^###\s+(.*)$/gm, '<h3>$1</h3>');
+        s = s.replace(/^##\s+(.*)$/gm, '<h2>$1</h2>');
+        s = s.replace(/^#\s+(.*)$/gm, '<h1>$1</h1>');
+
+        s = s.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+        s = s.replace(/\*(.*?)\*/g, '<em>$1</em>');
+        s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+        s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+
+        const lines = s.split('\n');
+        let html = [];
+        let inList = false;
+
+        for (let line of lines) {
+            if (/^\s*[-*]\s+/.test(line)) {
+                if (!inList) {
+                    html.push('<ul>');
+                    inList = true;
+                }
+                html.push('<li>' + line.replace(/^\s*[-*]\s+/, '') + '</li>');
+            } else {
+                if (inList) {
+                    html.push('</ul>');
+                    inList = false;
+                }
+                if (line.trim() === '') {
+                    html.push('');
+                } else if (/^<h[1-3]>/.test(line)) {
+                    html.push(line);
+                } else {
+                    html.push('<p>' + line + '</p>');
+                }
+            }
+        }
+        if (inList) html.push('</ul>');
+
+        return html.join('\n');
+    }
+
     // ------------------------------------------------------------------------
     // [模块 5] 渲染
     // ------------------------------------------------------------------------
@@ -340,51 +447,14 @@ class NooMiNav {
         }
         .glass-panel{
           background:var(--glass);
-          backdrop-filter:blur(24px);
-          -webkit-backdrop-filter:blur(24px);
+          backdrop-filter:blur(16px);
+          -webkit-backdrop-filter:blur(16px);
           border:1px solid var(--border);
-          box-shadow:0 8px 32px rgba(0,0,0,0.2);
+          box-shadow:0 8px 24px rgba(0,0,0,0.18);
           border-radius:20px;
         }
         h1,div,span,a,p,h2,h3,label,button,input,textarea{text-shadow:var(--text-shadow)}
         </style>`;
-    }
-
-    safeCssUrl(url) {
-        return String(url || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-    }
-
-    getBgShellStyle() {
-        return `background-color:#0f172a;background-size:cover;background-position:center;background-repeat:no-repeat;`;
-    }
-
-    render_BgRuntimeScript() {
-        const primary = this.safeCssUrl(this.config.img);
-        const fallback = this.safeCssUrl(this.DEFAULT_IMG);
-        return `<script>
-(function(){
-  const body = document.body;
-  const primary = '${primary}';
-  const fallback = '${fallback}';
-  function applyBg(url){
-    body.style.backgroundImage = "linear-gradient(rgba(2,6,23,0.32), rgba(2,6,23,0.42)), url('" + url + "')";
-  }
-  function loadImage(url, ok, fail){
-    if(!url){ fail && fail(); return; }
-    const img = new Image();
-    img.onload = () => ok && ok(url);
-    img.onerror = () => fail && fail();
-    img.referrerPolicy = 'no-referrer';
-    img.src = url;
-  }
-  applyBg(fallback);
-  if(primary && primary !== fallback){
-    loadImage(primary, applyBg, () => loadImage(fallback, applyBg));
-  }else{
-    loadImage(fallback, applyBg);
-  }
-})();
-</script>`;
     }
 
     render_MessageDetail(data) {
@@ -424,7 +494,7 @@ class NooMiNav {
           color: #fff;
           margin-bottom: 20px;
           outline: none;
-          transition: 0.3s;
+          transition: 0.2s;
           font-size: 0.95rem;
           box-sizing: border-box;
           font-family: inherit;
@@ -446,10 +516,10 @@ class NooMiNav {
           font-weight: 800;
           cursor: pointer;
           font-size: 1rem;
-          transition: 0.3s;
-          box-shadow: 0 4px 15px rgba(59,130,246,0.3);
+          transition: 0.2s;
+          box-shadow: 0 4px 12px rgba(59,130,246,0.26);
         }
-        button:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(59,130,246,0.45); }
+        button:hover { transform: translateY(-2px); box-shadow: 0 8px 22px rgba(59,130,246,0.35); }
         button:disabled { opacity: 0.7; cursor: not-allowed; transform: none; }
         .status { margin-top: 15px; font-size: 0.9rem; font-weight: 600; text-align: center; min-height: 20px; }
         .back { text-align: center; margin-top: 20px; }
@@ -472,7 +542,7 @@ class NooMiNav {
           color: #fff;
           margin-bottom: 20px;
           outline: none;
-          transition: 0.3s;
+          transition: 0.2s;
           font-size: 1rem;
           box-sizing: border-box;
           text-align: center;
@@ -480,7 +550,7 @@ class NooMiNav {
         input:focus {
           border-color: #60a5fa;
           background: rgba(0,0,0,0.5);
-          transform: scale(1.02);
+          transform: scale(1.01);
           box-shadow: 0 0 0 4px rgba(96,165,250,0.18);
         }
         input::placeholder { color: rgba(255,255,255,0.5); }
@@ -494,10 +564,10 @@ class NooMiNav {
           font-weight: 800;
           cursor: pointer;
           font-size: 1rem;
-          transition: 0.3s;
-          box-shadow: 0 4px 15px rgba(59,130,246,0.25);
+          transition: 0.2s;
+          box-shadow: 0 4px 12px rgba(59,130,246,0.25);
         }
-        button:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(59,130,246,0.4); }
+        button:hover { transform: translateY(-2px); box-shadow: 0 8px 22px rgba(59,130,246,0.35); }
         .error-msg { color: #f87171; margin-bottom: 15px; font-size: 0.9rem; min-height: 20px; }
         </style></head><body style="${this.getBgShellStyle()} display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0;"><div class="glass-panel box"><h1>🔐 管理后台</h1>${errorMsg ? `<div class="error-msg">❌ ${errorMsg}</div>` : ''}<form method="POST" action="${this.ADMIN_PATH}"><input type="password" name="password" placeholder="请输入访问口令" required autofocus><button type="submit">立即登录</button></form></div>${this.render_BgRuntimeScript()}</body></html>`;
     }
@@ -526,44 +596,42 @@ class NooMiNav {
             noticeHtml = `<div class="glass-card notice-card"><div class="notice-title"><span class="heart-beat">❤️</span> 温馨提示</div><div class="notice-content">${this.config.notice}</div></div>`;
         }
 
-        let promoHtml = `
-          <a href="https://dash.domain.digitalplat.org/signup?ref=s8ywnMQRkL"
-             target="_blank"
-             rel="noopener noreferrer"
-             class="glass-card promo-card">
-            <div class="promo-badge">免费域名可托管 CF</div>
-            <div class="promo-content">
-              <div class="promo-title">本站域名服务由 DigitalPlat FreeDomain 提供支持</div>
-              <div class="promo-desc">可免费申请域名，支持 Cloudflare 托管接入，适合导航站与个人项目使用。</div>
-            </div>
-          </a>
-        `;
+        let promoHtml = '';
+        if (String(this.config.promo_enable) === '1' && this.config.promo_url) {
+            const promoRendered = this.renderRichContent(this.config.promo_desc, this.config.promo_format);
+            promoHtml = `
+              <a href="${this.config.promo_url}"
+                 target="_blank"
+                 rel="noopener noreferrer"
+                 class="glass-card promo-card">
+                <div class="promo-badge">${this.config.promo_badge || '推广支持'}</div>
+                <div class="promo-content">
+                  <div class="promo-title">${this.config.promo_title || '推广支持'}</div>
+                  <div class="promo-desc rich-content">${promoRendered}</div>
+                </div>
+              </a>
+            `;
+        }
 
         return `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${this.config.title}</title><style>
           :root {
             --glass: rgba(255,255,255,0.14);
-            --glass-strong: rgba(255,255,255,0.20);
             --border: rgba(255,255,255,0.16);
-            --border-strong: rgba(255,255,255,0.24);
             --text-main: #fff;
             --text-sub: rgba(226,232,240,0.92);
-            --text-soft: rgba(226,232,240,0.74);
             --warning: #fcd34d;
             --primary: #8b5cf6;
             --primary-2: #38bdf8;
-            --backdrop-blur: 18px;
-            --shadow-soft: 0 8px 24px rgba(15,23,42,.16);
-            --shadow-hover: 0 16px 40px rgba(15,23,42,.24);
-            --transition: .28s ease;
+            --backdrop-blur: 14px;
+            --shadow-soft: 0 8px 20px rgba(15,23,42,.14);
+            --shadow-hover: 0 14px 28px rgba(15,23,42,.18);
+            --transition: .22s ease;
           }
           .dark-theme {
             --glass: rgba(15,23,42,0.76);
-            --glass-strong: rgba(15,23,42,0.84);
             --border: rgba(255,255,255,0.10);
-            --border-strong: rgba(255,255,255,0.16);
             --text-main: #f8fafc;
             --text-sub: rgba(226,232,240,.88);
-            --text-soft: rgba(203,213,225,.72);
           }
           * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
           body {
@@ -576,7 +644,6 @@ class NooMiNav {
             align-items: center;
             padding: 40px 20px 100px;
             position: relative;
-            transition: var(--transition);
           }
           .container { width: 100%; max-width: 1200px; }
           .glass-card {
@@ -596,7 +663,7 @@ class NooMiNav {
             line-height: 1.08;
             letter-spacing: -0.035em;
             margin-bottom: 12px;
-            text-shadow: 0 6px 20px rgba(0,0,0,0.32);
+            text-shadow: 0 6px 18px rgba(0,0,0,0.28);
           }
           .header p {
             max-width: 720px;
@@ -635,10 +702,10 @@ class NooMiNav {
             border-radius: 18px;
             border: 1px solid rgba(255,255,255,0.16);
             background: rgba(255,255,255,0.14);
-            backdrop-filter: blur(10px);
+            backdrop-filter: blur(8px);
             color: white;
             font-size: 1rem;
-            box-shadow: inset 0 1px 0 rgba(255,255,255,0.05), 0 6px 18px rgba(0,0,0,0.12);
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.05), 0 4px 14px rgba(0,0,0,0.10);
             transition: var(--transition);
           }
           .search-box::placeholder { color: rgba(255,255,255,0.64); }
@@ -646,7 +713,7 @@ class NooMiNav {
             outline: none;
             background: rgba(255,255,255,0.2);
             border-color: rgba(125,211,252,0.4);
-            box-shadow: 0 0 0 4px rgba(56,189,248,0.12), 0 8px 22px rgba(0,0,0,0.16);
+            box-shadow: 0 0 0 4px rgba(56,189,248,0.10), 0 8px 18px rgba(0,0,0,0.12);
           }
 
           .grid-resources {
@@ -661,13 +728,13 @@ class NooMiNav {
             overflow: hidden;
             min-height: 112px;
             opacity: 0;
-            transform: translateY(20px);
-            animation: fadeInUp 0.6s forwards;
+            transform: translateY(14px);
+            animation: fadeInUp 0.5s forwards;
           }
           .resource-card-wrap:hover,
           .partner-card:hover {
             background: rgba(255,255,255,0.22);
-            transform: translateY(-4px);
+            transform: translateY(-3px);
             box-shadow: var(--shadow-hover);
           }
           .resource-main-link {
@@ -678,7 +745,7 @@ class NooMiNav {
             text-decoration: none;
             color: white;
             padding: 22px 20px;
-            text-shadow: 0 2px 4px rgba(0,0,0,0.45);
+            text-shadow: 0 2px 4px rgba(0,0,0,0.42);
           }
           .card-icon {
             width: 52px;
@@ -687,7 +754,7 @@ class NooMiNav {
             justify-content: center;
             font-size: 2.2rem;
             flex-shrink: 0;
-            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.35));
+            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.25));
           }
           .card-info h3 {
             font-size: 1.06rem;
@@ -713,7 +780,7 @@ class NooMiNav {
             background: linear-gradient(135deg, rgba(16,185,129,0.78), rgba(5,150,105,0.88));
             border: 1px solid rgba(52,211,153,0.35);
             border-radius: 999px;
-            box-shadow: 0 2px 10px rgba(16,185,129,0.25);
+            box-shadow: 0 2px 8px rgba(16,185,129,0.18);
             transform: translateY(-1px);
             text-shadow: 0 1px 2px rgba(0,0,0,0.35);
             white-space: nowrap;
@@ -736,7 +803,6 @@ class NooMiNav {
             color: #e2e8f0;
             letter-spacing: .02em;
             text-decoration: none;
-            writing-mode: initial;
             transition: var(--transition);
           }
           .tag-backup:hover { background: rgba(139,92,246,.88); color: white; }
@@ -755,15 +821,15 @@ class NooMiNav {
             font-size: 0.92rem;
             font-weight: 600;
             border-radius: 16px;
-            text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+            text-shadow: 0 1px 3px rgba(0,0,0,0.45);
             transition: var(--transition);
             min-height: 68px;
             display: flex;
             align-items: center;
             justify-content: center;
             opacity: 0;
-            transform: translateY(20px);
-            animation: fadeInUp 0.6s forwards;
+            transform: translateY(14px);
+            animation: fadeInUp 0.5s forwards;
           }
 
           .fab-container {
@@ -784,20 +850,20 @@ class NooMiNav {
             font-weight: 700;
             color: white;
             transition: var(--transition);
-            box-shadow: 0 8px 22px rgba(0,0,0,0.2);
+            box-shadow: 0 6px 16px rgba(0,0,0,0.16);
             white-space: nowrap;
             display: flex;
             align-items: center;
             justify-content: center;
-            text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+            text-shadow: 0 1px 2px rgba(0,0,0,0.28);
             border: 1px solid rgba(255,255,255,.12);
-            backdrop-filter: blur(14px);
-            -webkit-backdrop-filter: blur(14px);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
           }
-          .fab-telegram { background: rgba(139,92,246,.68); }
-          .fab-mail { background: rgba(59,130,246,.68); }
-          .fab-push { background: rgba(244,63,94,.68); }
-          .fab-btn:hover { transform: translateY(-3px); box-shadow: 0 12px 28px rgba(0,0,0,.28); }
+          .fab-telegram { background: rgba(139,92,246,.66); }
+          .fab-mail { background: rgba(59,130,246,.66); }
+          .fab-push { background: rgba(244,63,94,.66); }
+          .fab-btn:hover { transform: translateY(-2px); box-shadow: 0 10px 20px rgba(0,0,0,.20); }
 
           .theme-toggle {
             position: fixed;
@@ -816,7 +882,7 @@ class NooMiNav {
             z-index: 100;
             color: white;
             font-size: 1.1rem;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+            box-shadow: 0 6px 16px rgba(0,0,0,0.10);
           }
 
           .no-result {
@@ -833,9 +899,8 @@ class NooMiNav {
             text-align: left;
             background: linear-gradient(135deg, rgba(244, 63, 94, 0.10) 0%, rgba(30, 41, 59, 0.32) 100%);
             border-left: 4px solid #fb7185;
-            backdrop-filter: blur(20px);
-            animation: fadeInUp 0.8s forwards;
-            animation-delay: 0.05s;
+            animation: fadeInUp 0.6s forwards;
+            animation-delay: 0.04s;
           }
           .notice-title {
             font-size: 1.1rem;
@@ -881,14 +946,14 @@ class NooMiNav {
             color: var(--text-main);
             background: linear-gradient(135deg, rgba(255,255,255,0.16) 0%, rgba(59,130,246,0.10) 100%);
             border: 1px solid rgba(125, 211, 252, 0.22);
-            box-shadow: 0 8px 30px rgba(15, 23, 42, 0.14);
-            animation: fadeInUp 0.8s forwards;
-            animation-delay: 0.08s;
+            box-shadow: 0 6px 18px rgba(15, 23, 42, 0.12);
+            animation: fadeInUp 0.6s forwards;
+            animation-delay: 0.06s;
           }
           .promo-card:hover {
-            transform: translateY(-4px);
+            transform: translateY(-3px);
             background: linear-gradient(135deg, rgba(255,255,255,0.22) 0%, rgba(59,130,246,0.16) 100%);
-            box-shadow: 0 14px 36px rgba(15, 23, 42, 0.22);
+            box-shadow: 0 12px 24px rgba(15, 23, 42, 0.16);
           }
           .promo-badge {
             flex-shrink: 0;
@@ -916,16 +981,31 @@ class NooMiNav {
             font-weight: 800;
             color: #ffffff;
             line-height: 1.45;
-            text-shadow: 0 2px 8px rgba(0,0,0,0.28);
+            text-shadow: 0 2px 6px rgba(0,0,0,0.22);
           }
           .promo-desc {
             font-size: 0.95rem;
             color: rgba(226, 232, 240, 0.92);
             line-height: 1.6;
           }
-          .dark-theme .promo-card {
-            background: linear-gradient(135deg, rgba(15,23,42,0.72) 0%, rgba(37,99,235,0.18) 100%);
-            border-color: rgba(148, 163, 184, 0.16);
+
+          .rich-content p { margin: 0 0 8px; }
+          .rich-content p:last-child { margin-bottom: 0; }
+          .rich-content h1, .rich-content h2, .rich-content h3 { margin: 0 0 8px; font-size: 1em; }
+          .rich-content ul { margin: 4px 0 0 18px; padding: 0; }
+          .rich-content li { margin: 4px 0; }
+          .rich-content code {
+            padding: 2px 6px;
+            border-radius: 8px;
+            background: rgba(15,23,42,.25);
+            border: 1px solid rgba(255,255,255,.08);
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size: .9em;
+          }
+          .rich-content a {
+            color: #bfdbfe;
+            text-decoration: underline;
+            text-underline-offset: 2px;
           }
 
           @keyframes beat { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.22); } }
@@ -965,17 +1045,21 @@ class NooMiNav {
             noResult.innerHTML = '😕 暂无匹配结果';
             gridResources.after(noResult);
             if (!searchBox) return;
+            let timer = null;
             searchBox.addEventListener('keydown', e => e.key === 'Enter' && e.preventDefault());
             searchBox.addEventListener('input', function(e) {
-              const searchTerm = e.target.value.toLowerCase().trim();
-              const cards = document.querySelectorAll('.resource-card-wrap, .partner-card');
-              let hasMatch = false;
-              cards.forEach(card => {
-                const isMatch = !searchTerm || card.textContent.toLowerCase().includes(searchTerm);
-                card.style.display = isMatch ? (card.classList.contains('partner-card') ? 'flex' : 'flex') : 'none';
-                if (isMatch) hasMatch = true;
-              });
-              noResult.style.display = searchTerm && !hasMatch ? 'block' : 'none';
+              clearTimeout(timer);
+              timer = setTimeout(() => {
+                const searchTerm = e.target.value.toLowerCase().trim();
+                const cards = document.querySelectorAll('.resource-card-wrap, .partner-card');
+                let hasMatch = false;
+                cards.forEach(card => {
+                  const isMatch = !searchTerm || card.textContent.toLowerCase().includes(searchTerm);
+                  card.style.display = isMatch ? 'flex' : 'none';
+                  if (isMatch) hasMatch = true;
+                });
+                noResult.style.display = searchTerm && !hasMatch ? 'block' : 'none';
+              }, 50);
             });
           }
           function initThemeToggle() {
@@ -996,7 +1080,7 @@ class NooMiNav {
             }
           }
           function initAnimation() {
-            const baseDelay = 0.08;
+            const baseDelay = 0.05;
             const resources = document.querySelectorAll('.resource-card-wrap');
             resources.forEach((card, i) => card.style.animationDelay = \`\${i * baseDelay}s\`);
             const friends = document.querySelectorAll('.partner-card');
@@ -1146,6 +1230,14 @@ class NooMiNav {
             push: this.dbSettings.push || this.env.push || "",
             host: this.dbSettings.host || this.env.host || "",
             notice: this.config.notice,
+
+            promo_enable: this.config.promo_enable,
+            promo_badge: this.config.promo_badge,
+            promo_title: this.config.promo_title,
+            promo_desc: this.config.promo_desc,
+            promo_url: this.config.promo_url,
+            promo_format: this.config.promo_format,
+
             links: JSON.stringify(this.LINKS_DATA, null, 2),
             friends: JSON.stringify(this.FRIENDS_DATA, null, 2)
         };
@@ -1155,13 +1247,17 @@ class NooMiNav {
             noticeHtmlPreview = `<div class="panel notice-panel"><div class="panel-head"><span>❤️</span><strong>公告预览</strong></div><div class="notice-preview">${this.config.notice}</div></div>`;
         }
 
+        const promoPreview = String(this.config.promo_enable) === '1'
+            ? `<div class="panel notice-panel"><div class="panel-head"><span>📣</span><strong>推广卡预览</strong></div><div class="promo-preview-box"><div class="promo-preview-badge">${this.escapeHtml(this.config.promo_badge || '推广支持')}</div><div class="promo-preview-main"><div class="promo-preview-title">${this.escapeHtml(this.config.promo_title || '推广支持')}</div><div class="promo-preview-desc">${this.renderRichContent(this.config.promo_desc || '', this.config.promo_format)}</div></div></div></div>`
+            : '';
+
         return `<!DOCTYPE html><html lang="zh-CN"><head>${this.render_Head(this.config.title)}<style>
         :root{
-          --bg-card:rgba(15,23,42,0.72);
+          --bg-card:rgba(15,23,42,0.70);
           --bg-card-soft:rgba(15,23,42,0.58);
-          --bg-elev:rgba(255,255,255,0.06);
-          --bd:rgba(255,255,255,0.12);
-          --bd-strong:rgba(255,255,255,0.18);
+          --bg-elev:rgba(255,255,255,0.05);
+          --bd:rgba(255,255,255,0.10);
+          --bd-strong:rgba(255,255,255,0.16);
           --txt:#f8fafc;
           --txt-sub:#94a3b8;
           --txt-soft:#cbd5e1;
@@ -1170,44 +1266,38 @@ class NooMiNav {
           --gold:#fbbf24;
           --green:#34d399;
           --red:#f87171;
-          --shadow:0 18px 44px rgba(2,6,23,0.24);
-          --shadow-soft:0 8px 24px rgba(2,6,23,0.16);
-          --radius-xl:24px;
-          --radius-lg:18px;
-          --radius-md:14px;
-          --radius-sm:12px;
+          --shadow:0 10px 28px rgba(2,6,23,0.18);
+          --shadow-soft:0 4px 14px rgba(2,6,23,0.12);
         }
         .light-theme{
-          --bg-card:rgba(255,255,255,0.90);
-          --bg-card-soft:rgba(255,255,255,0.78);
+          --bg-card:rgba(255,255,255,0.92);
+          --bg-card-soft:rgba(255,255,255,0.84);
           --bg-elev:rgba(15,23,42,0.04);
           --bd:rgba(15,23,42,0.08);
           --bd-strong:rgba(15,23,42,0.12);
           --txt:#0f172a;
           --txt-sub:#475569;
           --txt-soft:#64748b;
-          --shadow:0 18px 44px rgba(15,23,42,0.10);
-          --shadow-soft:0 8px 24px rgba(15,23,42,0.06);
+          --shadow:0 10px 24px rgba(15,23,42,0.08);
+          --shadow-soft:0 4px 12px rgba(15,23,42,0.06);
         }
         *{box-sizing:border-box}
+        html{scroll-behavior:smooth}
         body{
           color:var(--txt);
           ${this.getBgShellStyle()}
-          transition:.28s ease;
           padding:24px;
           display:block;
+          margin:0;
         }
-        .admin-shell{
-          width:min(1320px,100%);
-          margin:0 auto;
-        }
+        .admin-shell{ width:min(1320px,100%); margin:0 auto; }
 
         .theme-toggle{
           position:fixed;
           top:18px;
           left:18px;
-          width:44px;
-          height:44px;
+          width:42px;
+          height:42px;
           border-radius:14px;
           border:1px solid var(--bd);
           background:var(--bg-card-soft);
@@ -1217,7 +1307,7 @@ class NooMiNav {
           justify-content:center;
           cursor:pointer;
           z-index:120;
-          backdrop-filter:blur(12px);
+          backdrop-filter:blur(10px);
           box-shadow:var(--shadow-soft);
         }
 
@@ -1225,13 +1315,13 @@ class NooMiNav {
           background:var(--bg-card);
           border:1px solid var(--bd);
           border-radius:28px;
-          backdrop-filter:blur(20px);
+          backdrop-filter:blur(14px);
           box-shadow:var(--shadow);
           padding:28px;
           display:grid;
           grid-template-columns:1.4fr 1fr;
           gap:22px;
-          margin-bottom:22px;
+          margin-bottom:20px;
         }
         .hero-title{
           font-size:clamp(1.9rem,4vw,2.8rem);
@@ -1281,7 +1371,7 @@ class NooMiNav {
           border:1px solid var(--bd);
           border-radius:18px;
           padding:16px;
-          min-height:96px;
+          min-height:92px;
           display:flex;
           flex-direction:column;
           justify-content:space-between;
@@ -1293,7 +1383,7 @@ class NooMiNav {
           letter-spacing:.03em;
         }
         .quick-value{
-          font-size:1.8rem;
+          font-size:1.76rem;
           font-weight:900;
           line-height:1;
         }
@@ -1310,18 +1400,18 @@ class NooMiNav {
           border:none;
           text-decoration:none;
           cursor:pointer;
-          padding:12px 16px;
+          padding:11px 15px;
           border-radius:14px;
           font-weight:800;
           font-size:.92rem;
-          transition:.25s ease;
+          transition:.18s ease;
           display:inline-flex;
           align-items:center;
           justify-content:center;
           gap:8px;
           box-shadow:var(--shadow-soft);
         }
-        .action-btn:hover{ transform:translateY(-2px); }
+        .action-btn:hover{ transform:translateY(-1px); }
         .action-primary{ background:linear-gradient(135deg,#3b82f6,#8b5cf6); color:#fff; }
         .action-soft{ background:var(--bg-elev); color:var(--txt); border:1px solid var(--bd); }
         .action-danger{ background:rgba(248,113,113,.14); color:var(--red); border:1px solid rgba(248,113,113,.18); }
@@ -1331,13 +1421,13 @@ class NooMiNav {
           align-items:center;
           justify-content:space-between;
           gap:14px;
-          padding:16px 18px;
+          padding:14px 16px;
           background:var(--bg-card-soft);
           border:1px solid var(--bd);
           border-radius:20px;
-          backdrop-filter:blur(16px);
+          backdrop-filter:blur(12px);
           box-shadow:var(--shadow-soft);
-          margin-bottom:22px;
+          margin-bottom:20px;
           flex-wrap:wrap;
         }
         .toolbar-left,.toolbar-right{
@@ -1355,13 +1445,12 @@ class NooMiNav {
           border-radius:12px;
           font-size:.9rem;
           font-weight:800;
-          transition:.22s ease;
+          transition:.16s ease;
         }
         .tbtn:hover,.tbtn.active{
-          background:rgba(56,189,248,.16);
-          border-color:rgba(56,189,248,.28);
+          background:rgba(56,189,248,.14);
+          border-color:rgba(56,189,248,.24);
           color:#7dd3fc;
-          transform:translateY(-1px);
         }
         .date-chip{
           display:flex;
@@ -1386,18 +1475,14 @@ class NooMiNav {
           cursor:pointer;
         }
 
-        .grid-main{
-          display:grid;
-          grid-template-columns:1fr;
-          gap:22px;
-        }
+        .grid-main{ display:grid; grid-template-columns:1fr; gap:20px; }
         .panel{
           background:var(--bg-card);
           border:1px solid var(--bd);
           border-radius:24px;
-          backdrop-filter:blur(18px);
+          backdrop-filter:blur(14px);
           box-shadow:var(--shadow);
-          padding:22px;
+          padding:20px;
         }
         .panel-header{
           display:flex;
@@ -1428,16 +1513,18 @@ class NooMiNav {
         .stat-card{
           border-radius:20px;
           border:1px solid var(--bd);
-          background:linear-gradient(180deg,var(--bg-elev),rgba(255,255,255,0.03));
+          background:linear-gradient(180deg,var(--bg-elev),rgba(255,255,255,0.02));
           padding:18px;
           cursor:pointer;
-          transition:.24s ease;
-          min-height:168px;
+          transition:.16s ease;
+          min-height:166px;
+          content-visibility:auto;
+          contain-intrinsic-size:166px;
         }
         .stat-card:hover{
-          transform:translateY(-4px);
-          border-color:rgba(56,189,248,.28);
-          box-shadow:0 16px 38px rgba(2,6,23,0.14);
+          transform:translateY(-2px);
+          border-color:rgba(56,189,248,.24);
+          box-shadow:0 10px 24px rgba(2,6,23,0.12);
         }
         .stat-top{
           display:flex;
@@ -1460,7 +1547,7 @@ class NooMiNav {
           display:flex;
           align-items:center;
           justify-content:center;
-          background:rgba(255,255,255,.08);
+          background:rgba(255,255,255,.06);
           border:1px solid var(--bd);
           flex-shrink:0;
           font-size:1.3rem;
@@ -1476,11 +1563,11 @@ class NooMiNav {
           flex-shrink:0;
           padding:6px 10px;
           border-radius:999px;
-          background:rgba(56,189,248,.14);
+          background:rgba(56,189,248,.12);
           color:#7dd3fc;
           font-weight:900;
           font-size:.82rem;
-          border:1px solid rgba(56,189,248,.18);
+          border:1px solid rgba(56,189,248,.16);
         }
 
         .stat-metrics{
@@ -1490,7 +1577,7 @@ class NooMiNav {
           margin-bottom:14px;
         }
         .metric{
-          background:rgba(255,255,255,.03);
+          background:rgba(255,255,255,.02);
           border:1px solid var(--bd);
           border-radius:14px;
           padding:12px 10px;
@@ -1541,11 +1628,13 @@ class NooMiNav {
           border-radius:18px;
           padding:14px;
           cursor:pointer;
-          transition:.22s ease;
+          transition:.16s ease;
+          content-visibility:auto;
+          contain-intrinsic-size:90px;
         }
         .mini-card:hover{
-          transform:translateY(-3px);
-          border-color:rgba(56,189,248,.28);
+          transform:translateY(-2px);
+          border-color:rgba(56,189,248,.24);
         }
         .mini-top{
           display:flex;
@@ -1566,8 +1655,8 @@ class NooMiNav {
           flex-shrink:0;
           border-radius:999px;
           padding:4px 8px;
-          background:rgba(56,189,248,.14);
-          border:1px solid rgba(56,189,248,.18);
+          background:rgba(56,189,248,.12);
+          border:1px solid rgba(56,189,248,.16);
           color:#7dd3fc;
           font-weight:900;
           font-size:.78rem;
@@ -1594,15 +1683,56 @@ class NooMiNav {
           font-size:.94rem;
         }
 
+        .promo-preview-box{
+          display:flex;
+          gap:16px;
+          align-items:flex-start;
+          padding:14px;
+          border-radius:18px;
+          background:linear-gradient(135deg, rgba(255,255,255,0.08), rgba(59,130,246,0.06));
+          border:1px solid var(--bd);
+        }
+        .promo-preview-badge{
+          min-width:130px;
+          padding:10px 14px;
+          border-radius:999px;
+          text-align:center;
+          background:rgba(255,255,255,0.08);
+          border:1px solid var(--bd);
+          font-weight:800;
+          color:#dbeafe;
+        }
+        .promo-preview-main{ flex:1; min-width:0; }
+        .promo-preview-title{
+          font-weight:900;
+          margin-bottom:8px;
+        }
+        .promo-preview-desc{
+          color:var(--txt-soft);
+          line-height:1.75;
+          font-size:.93rem;
+        }
+        .promo-preview-desc p{ margin:0 0 8px; }
+        .promo-preview-desc p:last-child{ margin-bottom:0; }
+        .promo-preview-desc ul{ margin:4px 0 0 18px; padding:0; }
+        .promo-preview-desc li{ margin:4px 0; }
+        .promo-preview-desc code{
+          padding:2px 6px;
+          border-radius:8px;
+          background:rgba(255,255,255,.06);
+          border:1px solid var(--bd);
+          font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
+        }
+        .promo-preview-desc a{ color:#93c5fd; }
+
         .mask{
           position:fixed;
           inset:0;
-          background:rgba(2,6,23,.48);
-          backdrop-filter:blur(4px);
+          background:rgba(2,6,23,.44);
           z-index:140;
           opacity:0;
           pointer-events:none;
-          transition:.25s ease;
+          transition:.16s ease;
         }
         .mask.show{
           opacity:1;
@@ -1612,22 +1742,22 @@ class NooMiNav {
         .drawer{
           position:fixed;
           top:0;
-          right:-460px;
-          width:420px;
+          right:-440px;
+          width:400px;
           max-width:100vw;
           height:100vh;
           z-index:150;
-          transition:.28s ease;
+          transition:.18s ease;
           background:var(--bg-card);
           border-left:1px solid var(--bd);
-          backdrop-filter:blur(20px);
-          box-shadow:-24px 0 44px rgba(2,6,23,.24);
+          backdrop-filter:blur(14px);
+          box-shadow:-12px 0 24px rgba(2,6,23,.16);
           display:flex;
           flex-direction:column;
         }
         .drawer.open{ right:0; }
         .drawer-head{
-          padding:20px;
+          padding:18px;
           border-bottom:1px solid var(--bd);
           display:flex;
           align-items:center;
@@ -1653,7 +1783,7 @@ class NooMiNav {
         .log-list{
           flex:1;
           overflow:auto;
-          padding:16px;
+          padding:14px;
           margin:0;
           list-style:none;
           display:flex;
@@ -1664,7 +1794,7 @@ class NooMiNav {
           padding:14px;
           border-radius:16px;
           border:1px solid var(--bd);
-          background:rgba(255,255,255,.03);
+          background:rgba(255,255,255,.02);
         }
         .log-row{
           display:flex;
@@ -1688,16 +1818,15 @@ class NooMiNav {
         .fs-modal{
           position:fixed;
           inset:0;
-          background:rgba(2,6,23,.72);
-          backdrop-filter:blur(12px);
+          background:rgba(2,6,23,.58);
           z-index:160;
           display:none;
           overflow:auto;
         }
         .fs-modal.open{ display:block; }
         .settings-wrap{
-          width:min(1120px,calc(100% - 28px));
-          margin:24px auto;
+          width:min(1180px,calc(100% - 24px));
+          margin:18px auto;
           background:var(--bg-card);
           border:1px solid var(--bd);
           border-radius:28px;
@@ -1705,7 +1834,7 @@ class NooMiNav {
           overflow:hidden;
         }
         .settings-head{
-          padding:22px 24px;
+          padding:20px 22px;
           border-bottom:1px solid var(--bd);
           display:flex;
           align-items:center;
@@ -1715,7 +1844,6 @@ class NooMiNav {
           position:sticky;
           top:0;
           background:var(--bg-card);
-          backdrop-filter:blur(16px);
           z-index:2;
         }
         .settings-title{
@@ -1733,18 +1861,16 @@ class NooMiNav {
           gap:10px;
           flex-wrap:wrap;
         }
-        .settings-body{
-          padding:24px;
-        }
+        .settings-body{ padding:22px; }
         .settings-grid{
           display:grid;
           grid-template-columns:repeat(2,1fr);
-          gap:18px;
+          gap:16px;
         }
         .full{ grid-column:1 / -1; }
 
         .field{
-          background:rgba(255,255,255,.03);
+          background:rgba(255,255,255,.02);
           border:1px solid var(--bd);
           border-radius:18px;
           padding:16px;
@@ -1763,25 +1889,26 @@ class NooMiNav {
           margin-top:8px;
           line-height:1.6;
         }
-        .field input,.field textarea{
+        .field input,.field textarea,.field select{
           width:100%;
           border-radius:14px;
           border:1px solid var(--bd-strong);
-          background:rgba(2,6,23,.20);
+          background:rgba(2,6,23,.18);
           color:var(--txt);
           padding:14px;
           font-size:.95rem;
           font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono','Courier New',monospace;
           outline:none;
-          transition:.2s ease;
+          transition:.16s ease;
         }
         .light-theme .field input,
-        .light-theme .field textarea{
+        .light-theme .field textarea,
+        .light-theme .field select{
           background:#fff;
         }
-        .field input:focus,.field textarea:focus{
-          border-color:rgba(56,189,248,.48);
-          box-shadow:0 0 0 4px rgba(56,189,248,.12);
+        .field input:focus,.field textarea:focus,.field select:focus{
+          border-color:rgba(56,189,248,.42);
+          box-shadow:0 0 0 4px rgba(56,189,248,.10);
         }
         .field textarea{
           min-height:130px;
@@ -1789,8 +1916,68 @@ class NooMiNav {
           line-height:1.55;
           white-space:pre;
         }
-        .field textarea.code{
-          min-height:260px;
+        .field textarea.code{ min-height:250px; }
+
+        .field-tools{
+          display:flex;
+          gap:8px;
+          flex-wrap:wrap;
+          margin-bottom:10px;
+        }
+        .mini-btn{
+          appearance:none;
+          border:none;
+          cursor:pointer;
+          padding:8px 12px;
+          border-radius:12px;
+          font-weight:800;
+          font-size:.82rem;
+          background:var(--bg-elev);
+          color:var(--txt);
+          border:1px solid var(--bd);
+          transition:.16s ease;
+        }
+        .mini-btn:hover{ background:rgba(56,189,248,.12); border-color:rgba(56,189,248,.22); color:#7dd3fc; }
+
+        .switch-row{
+          display:flex;
+          align-items:center;
+          gap:12px;
+          flex-wrap:wrap;
+        }
+        .switch{
+          position:relative;
+          width:52px;
+          height:30px;
+          display:inline-block;
+        }
+        .switch input{ display:none; }
+        .slider{
+          position:absolute;
+          inset:0;
+          background:rgba(255,255,255,.10);
+          border:1px solid var(--bd);
+          border-radius:999px;
+          transition:.18s ease;
+        }
+        .slider:before{
+          content:'';
+          position:absolute;
+          width:22px;
+          height:22px;
+          left:3px;
+          top:3px;
+          background:#fff;
+          border-radius:50%;
+          transition:.18s ease;
+          box-shadow:0 2px 8px rgba(0,0,0,.18);
+        }
+        .switch input:checked + .slider{
+          background:rgba(56,189,248,.26);
+          border-color:rgba(56,189,248,.28);
+        }
+        .switch input:checked + .slider:before{
+          transform:translateX(22px);
         }
 
         @media (max-width: 1024px){
@@ -1804,8 +1991,10 @@ class NooMiNav {
           .stats-grid{ grid-template-columns:1fr; }
           .settings-grid{ grid-template-columns:1fr; }
           .drawer{ width:100%; right:-100%; }
-          .settings-wrap{ width:calc(100% - 12px); margin:6px auto; border-radius:20px; }
+          .settings-wrap{ width:calc(100% - 10px); margin:5px auto; border-radius:20px; }
           .settings-head,.settings-body{ padding:16px; }
+          .promo-preview-box{ flex-direction:column; }
+          .promo-preview-badge{ min-width:auto; width:fit-content; }
         }
         </style></head>
         <body>
@@ -1816,7 +2005,7 @@ class NooMiNav {
               <div>
                 <h1 class="hero-title">📊 数据看板</h1>
                 <div class="hero-sub">
-                  当前查看维度：<strong style="color:var(--txt)">${m}</strong>。你可以在这里查看精选资源与友链的点击情况、快速预览公告内容，并直接进入系统配置面板修改站点设置。
+                  当前查看维度：<strong style="color:var(--txt)">${m}</strong>。你可以在这里查看精选资源与友链的点击情况、快速预览公告与推广卡内容，并直接进入系统配置面板修改站点设置。
                 </div>
                 <div class="hero-tags">
                   <span class="pill">🧭 路径：${this.ADMIN_PATH}</span>
@@ -1868,6 +2057,7 @@ class NooMiNav {
 
             <div class="grid-main">
               ${noticeHtmlPreview}
+              ${promoPreview}
 
               <section class="panel">
                 <div class="panel-header">
@@ -1906,7 +2096,7 @@ class NooMiNav {
               <div class="settings-head">
                 <div>
                   <h3 class="settings-title">⚙️ 系统全局配置</h3>
-                  <div class="settings-sub">保存后立即生效。JSON 区域请保持合法格式。</div>
+                  <div class="settings-sub">支持 JSON 自动格式化、示例模板填充、推广卡 HTML / Markdown 内容配置。</div>
                 </div>
                 <div class="settings-actions">
                   <button class="action-btn action-soft" onclick="cls()">取消 (Esc)</button>
@@ -1958,17 +2148,62 @@ class NooMiNav {
                   </div>
 
                   <div class="field full">
+                    <label>推广卡开关 / 配置</label>
+                    <div class="switch-row" style="margin-bottom:12px;">
+                      <label class="switch">
+                        <input type="checkbox" id="s_promo_enable">
+                        <span class="slider"></span>
+                      </label>
+                      <span style="color:var(--txt-sub);font-weight:700;">启用首页推广卡</span>
+                    </div>
+                    <div class="settings-grid">
+                      <div class="field">
+                        <label>推广卡徽标文字</label>
+                        <input type="text" id="s_promo_badge" placeholder="如：免费域名可托管 CF">
+                      </div>
+                      <div class="field">
+                        <label>推广卡标题</label>
+                        <input type="text" id="s_promo_title" placeholder="如：本站域名服务由 ... 提供支持">
+                      </div>
+                      <div class="field">
+                        <label>推广卡跳转链接</label>
+                        <input type="text" id="s_promo_url" placeholder="https://...">
+                      </div>
+                      <div class="field">
+                        <label>推广卡内容格式</label>
+                        <select id="s_promo_format">
+                          <option value="markdown">Markdown</option>
+                          <option value="html">HTML</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div style="margin-top:16px;">
+                      <label style="display:block;margin-bottom:10px;font-size:.88rem;color:var(--txt-sub);font-weight:800;">推广卡描述内容</label>
+                      <textarea id="s_promo_desc" style="min-height:150px"></textarea>
+                      <small>支持 Markdown 或 HTML。Markdown 支持标题、加粗、斜体、列表、链接、行内代码等基础语法。</small>
+                    </div>
+                  </div>
+
+                  <div class="field full">
                     <label>自定义卡片跳转域名</label>
                     <input type="text" id="s_host" placeholder="如果不填，默认自动使用当前访问域名">
                   </div>
 
                   <div class="field full">
                     <label>💎 精选资源 LINKS（JSON 格式）</label>
+                    <div class="field-tools">
+                      <button class="mini-btn" type="button" onclick="formatJsonField('s_links')">自动格式化</button>
+                      <button class="mini-btn" type="button" onclick="fillLinksExample()">填入示例模板</button>
+                    </div>
                     <textarea id="s_links" class="code"></textarea>
                   </div>
 
                   <div class="field full">
                     <label>🔗 合作伙伴 FRIENDS（JSON 格式）</label>
+                    <div class="field-tools">
+                      <button class="mini-btn" type="button" onclick="formatJsonField('s_friends')">自动格式化</button>
+                      <button class="mini-btn" type="button" onclick="fillFriendsExample()">填入示例模板</button>
+                    </div>
                     <textarea id="s_friends" class="code"></textarea>
                   </div>
                 </div>
@@ -1981,6 +2216,38 @@ class NooMiNav {
           <script>
             const ADMIN_PATH = '${this.ADMIN_PATH}';
             const SYS_SET = ${JSON.stringify(sysSettings)};
+
+            const LINKS_EXAMPLE = [
+              {
+                id: "google",
+                name: "Google 搜索",
+                url: "https://www.google.com",
+                backup_url: "https://www.google.com.hk",
+                emoji: "🔎",
+                note: "全球常用搜索引擎",
+                tag: "推荐"
+              },
+              {
+                id: "github",
+                name: "GitHub",
+                url: "https://github.com",
+                emoji: "💻",
+                note: "代码托管与开源社区"
+              }
+            ];
+
+            const FRIENDS_EXAMPLE = [
+              {
+                id: "friend_1",
+                name: "示例友链站点",
+                url: "https://example.com"
+              },
+              {
+                id: "friend_2",
+                name: "另一个合作伙伴",
+                url: "https://example.org"
+              }
+            ];
 
             function initAdminTheme() {
               if(localStorage.getItem('admin_theme') === 'light') {
@@ -1998,32 +2265,41 @@ class NooMiNav {
             }
 
             async function openLog(id, m, n){
-              document.getElementById('dr').classList.add('open');
-              document.getElementById('mask').classList.add('show');
-              document.getElementById('dt').innerText = n + ' · 点击记录';
-
+              const dr = document.getElementById('dr');
+              const mask = document.getElementById('mask');
               const l = document.getElementById('dl');
+
+              dr.classList.add('open');
+              mask.classList.add('show');
+              document.getElementById('dt').innerText = n + ' · 点击记录';
               l.innerHTML = '<li style="padding:20px;text-align:center;color:var(--txt-sub)">加载中...</li>';
 
               try {
                 const r = await fetch(\`\${ADMIN_PATH}/api/logs?id=\${id}&m=\${m}\`);
                 const data = await r.json();
+
                 if(!data.length){
                   l.innerHTML = '<li style="padding:20px;text-align:center;opacity:.6;color:var(--txt-sub)">该时段无记录</li>';
                   return;
                 }
-                l.innerHTML = data.map((x,i)=>\`
-                  <li class="log-item">
-                    <div class="log-row">
-                      <span class="log-index">#\${i+1}</span>
-                      <span class="log-time">\${x.click_time}</span>
-                    </div>
-                    <div class="log-meta">
-                      <span>\${x.ip_address}</span>
-                      <span>\${(x.user_agent || '').slice(0,46) || 'unknown'}</span>
-                    </div>
-                  </li>
-                \`).join('');
+
+                let html = '';
+                for(let i = 0; i < data.length; i++){
+                  const x = data[i];
+                  html += \`
+                    <li class="log-item">
+                      <div class="log-row">
+                        <span class="log-index">#\${i+1}</span>
+                        <span class="log-time">\${x.click_time}</span>
+                      </div>
+                      <div class="log-meta">
+                        <span>\${x.ip_address}</span>
+                        <span>\${(x.user_agent || '').slice(0,46) || 'unknown'}</span>
+                      </div>
+                    </li>
+                  \`;
+                }
+                l.innerHTML = html;
               } catch(e) {
                 l.innerHTML = '<li style="padding:20px;text-align:center;color:#f87171">加载失败</li>';
                 console.error(e);
@@ -2040,12 +2316,43 @@ class NooMiNav {
               document.getElementById('s_push').value = SYS_SET.push || '';
               document.getElementById('s_host').value = SYS_SET.host || '';
               document.getElementById('s_notice').value = SYS_SET.notice || '';
+
+              document.getElementById('s_promo_enable').checked = String(SYS_SET.promo_enable || '0') === '1';
+              document.getElementById('s_promo_badge').value = SYS_SET.promo_badge || '';
+              document.getElementById('s_promo_title').value = SYS_SET.promo_title || '';
+              document.getElementById('s_promo_desc').value = SYS_SET.promo_desc || '';
+              document.getElementById('s_promo_url').value = SYS_SET.promo_url || '';
+              document.getElementById('s_promo_format').value = SYS_SET.promo_format || 'markdown';
+
               document.getElementById('s_links').value = SYS_SET.links || '[]';
               document.getElementById('s_friends').value = SYS_SET.friends || '[]';
 
               document.getElementById('set-fs').classList.add('open');
               document.getElementById('mask').classList.add('show');
               document.body.style.overflow = 'hidden';
+            }
+
+            function formatJsonField(id){
+              const el = document.getElementById(id);
+              try{
+                const parsed = JSON.parse(el.value);
+                el.value = JSON.stringify(parsed, null, 2);
+                alert('✅ 已自动格式化');
+              }catch(e){
+                alert('⚠️ JSON 格式有误，无法格式化');
+              }
+            }
+
+            function fillLinksExample(){
+              const el = document.getElementById('s_links');
+              if(el.value.trim() && !confirm('当前 LINKS 内容不为空，确定要用示例模板覆盖吗？')) return;
+              el.value = JSON.stringify(LINKS_EXAMPLE, null, 2);
+            }
+
+            function fillFriendsExample(){
+              const el = document.getElementById('s_friends');
+              if(el.value.trim() && !confirm('当前 FRIENDS 内容不为空，确定要用示例模板覆盖吗？')) return;
+              el.value = JSON.stringify(FRIENDS_EXAMPLE, null, 2);
             }
 
             async function saveSettings(btn) {
@@ -2067,6 +2374,14 @@ class NooMiNav {
                 push: document.getElementById('s_push').value,
                 host: document.getElementById('s_host').value,
                 notice: document.getElementById('s_notice').value,
+
+                promo_enable: document.getElementById('s_promo_enable').checked ? '1' : '0',
+                promo_badge: document.getElementById('s_promo_badge').value,
+                promo_title: document.getElementById('s_promo_title').value,
+                promo_desc: document.getElementById('s_promo_desc').value,
+                promo_url: document.getElementById('s_promo_url').value,
+                promo_format: document.getElementById('s_promo_format').value,
+
                 links: document.getElementById('s_links').value,
                 friends: document.getElementById('s_friends').value
               };
