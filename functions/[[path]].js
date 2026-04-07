@@ -1,5 +1,5 @@
 // ============================================================================
-// NooMiNav V13.2 UI Refresh Pro
+// NooMiNav V13.2 UI Refresh Pro - Fixed
 // 双擎驱动适配器：支持 Cloudflare Workers 和 Pages
 // ============================================================================
 export default { async fetch(request, env, ctx) { const app = new NooMiNav(request, env, ctx); return app.handle(); } };
@@ -60,7 +60,6 @@ class NooMiNav {
                 ? this.dbSettings.notice
                 : (this.env.notice || "<div style=\"margin-bottom:8px\">🎉 欢迎使用 FlarePortal 极简导航！</div><div class=\"notice-sub\">您可以在后台「系统设置」中修改此处的公告内容，支持 HTML 标签。如果清空内容，公告板将自动隐藏。</div>"),
 
-            // Promo / 广告卡配置
             promo_enable: this.dbSettings.promo_enable !== undefined ? this.dbSettings.promo_enable : (this.env.promo_enable || "1"),
             promo_badge: this.dbSettings.promo_badge !== undefined ? this.dbSettings.promo_badge : (this.env.promo_badge || "免费域名可托管 CF"),
             promo_title: this.dbSettings.promo_title !== undefined ? this.dbSettings.promo_title : (this.env.promo_title || "本站域名服务由 DigitalPlat FreeDomain 提供支持"),
@@ -285,7 +284,7 @@ class NooMiNav {
         try {
             const ip = this.request.headers.get('CF-Connecting-IP') || 'unknown';
             const userAgent = this.request.headers.get('User-Agent') || 'unknown';
-            const { dateKey, fullStr, year, month, todayStr } = this.time;
+            const { dateKey, fullStr, year, todayStr } = this.time;
 
             await this.env.db.prepare("INSERT INTO logs (link_id, click_time, month_key, ip_address, user_agent) VALUES (?, ?, ?, ?, ?)").bind(id, fullStr, dateKey, ip, userAgent).run();
             await this.env.db.prepare(`INSERT INTO stats (id, name, type, total_clicks, year_clicks, month_clicks, day_clicks, last_year, last_month, last_day, last_time) VALUES (?1, ?2, ?3, 1, 1, 1, 1, ?4, ?5, ?7, ?6) ON CONFLICT(id) DO UPDATE SET total_clicks = total_clicks + 1, year_clicks = CASE WHEN last_year = ?4 THEN year_clicks + 1 ELSE 1 END, month_clicks = CASE WHEN last_month = ?5 THEN month_clicks + 1 ELSE 1 END, day_clicks = CASE WHEN last_day = ?7 THEN day_clicks + 1 ELSE 1 END, last_year = ?4, last_month = ?5, last_day = ?7, last_time = ?6, name = ?2, type = ?3`).bind(id, name, type, year, dateKey, fullStr, todayStr).run();
@@ -329,6 +328,15 @@ class NooMiNav {
 
     safeCssUrl(url) {
         return String(url || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    }
+
+    safeScriptJson(obj) {
+        return JSON.stringify(obj)
+            .replace(/</g, "\\u003c")
+            .replace(/>/g, "\\u003e")
+            .replace(/&/g, "\\u0026")
+            .replace(/\u2028/g, "\\u2028")
+            .replace(/\u2029/g, "\\u2029");
     }
 
     getBgShellStyle() {
@@ -383,7 +391,6 @@ class NooMiNav {
             return raw;
         }
 
-        // 轻量 Markdown 渲染
         let s = this.escapeHtml(raw);
 
         s = s.replace(/^###\s+(.*)$/gm, '<h3>$1</h3>');
@@ -628,7 +635,7 @@ class NooMiNav {
             --transition: .22s ease;
           }
           .dark-theme {
-            --glass: rgba(15,23,42,0.76);
+            --glass: rgba(15,23,42,0.82);
             --border: rgba(255,255,255,0.10);
             --text-main: #f8fafc;
             --text-sub: rgba(226,232,240,.88);
@@ -654,6 +661,9 @@ class NooMiNav {
             border-radius: 20px;
             box-shadow: var(--shadow-soft);
             transition: var(--transition);
+          }
+          .dark-theme .glass-card {
+            background: linear-gradient(135deg, rgba(15,23,42,.82), rgba(15,23,42,.68));
           }
 
           .header { text-align: center; padding: 48px 28px; margin-bottom: 28px; }
@@ -1055,7 +1065,7 @@ class NooMiNav {
                 let hasMatch = false;
                 cards.forEach(card => {
                   const isMatch = !searchTerm || card.textContent.toLowerCase().includes(searchTerm);
-                  card.style.display = isMatch ? 'flex' : 'none';
+                  card.style.display = isMatch ? '' : 'none';
                   if (isMatch) hasMatch = true;
                 });
                 noResult.style.display = searchTerm && !hasMatch ? 'block' : 'none';
@@ -1077,6 +1087,8 @@ class NooMiNav {
             if (savedTheme === 'dark' || (!savedTheme && prefersDark)) {
               document.body.classList.add('dark-theme');
               themeBtn.textContent = '☀️';
+            } else {
+              themeBtn.textContent = '🌙';
             }
           }
           function initAnimation() {
@@ -2214,8 +2226,9 @@ class NooMiNav {
           ${this.render_BgRuntimeScript()}
 
           <script>
+            console.log('admin script loaded');
             const ADMIN_PATH = '${this.ADMIN_PATH}';
-            const SYS_SET = ${JSON.stringify(sysSettings)};
+            const SYS_SET = ${this.safeScriptJson(sysSettings)};
 
             const LINKS_EXAMPLE = [
               {
@@ -2250,18 +2263,24 @@ class NooMiNav {
             ];
 
             function initAdminTheme() {
+              const btn = document.querySelector('.theme-toggle');
+              if (!btn) return;
+
               if(localStorage.getItem('admin_theme') === 'light') {
                 document.body.classList.add('light-theme');
-                document.querySelector('.theme-toggle').textContent = '🌙';
+                btn.textContent = '🌙';
+              } else {
+                btn.textContent = '☀️';
               }
             }
             initAdminTheme();
 
             function toggleAdminTheme() {
+              const btn = document.querySelector('.theme-toggle');
               document.body.classList.toggle('light-theme');
               const isLight = document.body.classList.contains('light-theme');
               localStorage.setItem('admin_theme', isLight ? 'light' : 'dark');
-              document.querySelector('.theme-toggle').textContent = isLight ? '🌙' : '☀️';
+              if (btn) btn.textContent = isLight ? '🌙' : '☀️';
             }
 
             async function openLog(id, m, n){
@@ -2275,7 +2294,7 @@ class NooMiNav {
               l.innerHTML = '<li style="padding:20px;text-align:center;color:var(--txt-sub)">加载中...</li>';
 
               try {
-                const r = await fetch(\`\${ADMIN_PATH}/api/logs?id=\${id}&m=\${m}\`);
+                const r = await fetch(\`\${ADMIN_PATH}/api/logs?id=\${encodeURIComponent(id)}&m=\${encodeURIComponent(m)}\`);
                 const data = await r.json();
 
                 if(!data.length){
