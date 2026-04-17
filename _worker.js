@@ -106,8 +106,11 @@ class NooMiNav {
       promo_format: this.dbSettings.promo_format !== undefined ? this.dbSettings.promo_format : (this.env.promo_format || "markdown"),
 
       account_enable: this.dbSettings.account_enable !== undefined ? this.dbSettings.account_enable : (this.env.account_enable || "0"),
-      account_format: this.dbSettings.account_format !== undefined ? this.dbSettings.account_format : (this.env.account_format || "markdown"),
-      account_content: this.dbSettings.account_content !== undefined ? this.dbSettings.account_content : (this.env.account_content || "")
+      account_badge: this.dbSettings.account_badge !== undefined ? this.dbSettings.account_badge : (this.env.account_badge || "账号购买"),
+      account_title: this.dbSettings.account_title !== undefined ? this.dbSettings.account_title : (this.env.account_title || "Google / Apple 外区 ID / Telegram / Instagram / X"),
+      account_desc: this.dbSettings.account_desc !== undefined ? this.dbSettings.account_desc : (this.env.account_desc || "多种类型可选 · 快速处理 · 自动发货"),
+      account_url: this.dbSettings.account_url !== undefined ? this.dbSettings.account_url : (this.env.account_url || ""),
+      account_format: this.dbSettings.account_format !== undefined ? this.dbSettings.account_format : (this.env.account_format || "markdown")
     };
 
     if (this.config.push && !this.config.push.endsWith("/contact")) {
@@ -374,7 +377,7 @@ class NooMiNav {
       const allowed = new Set([
         "admin_pass", "title", "subtitle", "img", "contact_url", "mail", "push", "host", "notice",
         "promo_enable", "promo_badge", "promo_title", "promo_desc", "promo_url", "promo_format",
-        "account_enable", "account_format", "account_content",
+        "account_enable", "account_badge", "account_title", "account_desc", "account_url", "account_format",
         "links", "friends"
       ]);
 
@@ -659,8 +662,11 @@ class NooMiNav {
     const promoDesc = this.config.promo_desc || "";
 
     const accountEnabled = String(this.config.account_enable || "0") === "1";
+    const accountUrl = this.config.account_url || "";
+    const accountBadge = this.config.account_badge || "账号购买";
+    const accountTitle = this.config.account_title || "账号购买";
+    const accountDesc = this.config.account_desc || "";
     const accountFormat = this.config.account_format || "markdown";
-    const accountContent = (this.config.account_content || "").trim();
 
     const cardsHtml = safeLinks.map(item => {
       const itemId = this.escapeAttr(item.id || "");
@@ -684,34 +690,10 @@ class NooMiNav {
     }
 
     let accountCardHtml = "";
-if (accountEnabled && accountContent) {
-  let accountUrl = "";
-  const mdMatch = accountContent.match(/\[.*?\]\((https?:\/\/[^\s)]+)\)/i);
-  const htmlMatch = accountContent.match(/href=["'](https?:\/\/[^"']+)["']/i);
-  if (mdMatch?.[1]) accountUrl = mdMatch[1];
-  if (!accountUrl && htmlMatch?.[1]) accountUrl = htmlMatch[1];
-
-  let plainText = accountContent
-    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/gi, "$1")
-    .replace(/<a[^>]*>(.*?)<\/a>/gi, "$1")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/\r/g, "")
-    .split("\n")
-    .map(s => s.trim())
-    .filter(Boolean)
-    .join(" · ")
-    .replace(/\s{2,}/g, " ")
-    .trim();
-
-  if (!plainText) plainText = "多种类型可选 · 快速处理 · 自动发货";
-
-  const badgeHtml = `<div class="promo-badge">账号购买</div>`;
-  const contentHtml = `<div class="promo-content"><div class="promo-title">Google / Apple 外区 ID / Telegram / Instagram / X</div><div class="promo-desc">${this.escapeHtml(plainText)}</div></div>`;
-
-  accountCardHtml = accountUrl
-    ? `<a href="${this.escapeAttr(accountUrl)}" target="_blank" rel="noopener noreferrer" class="glass-card promo-card account-promo-card">${badgeHtml}${contentHtml}</a>`
-    : `<section class="glass-card promo-card account-promo-card">${badgeHtml}${contentHtml}</section>`;
-    }
+if (accountEnabled && accountUrl) {
+  const accountRendered = this.renderRichContent(accountDesc, accountFormat);
+  accountCardHtml = `<a href="${this.escapeAttr(accountUrl)}" target="_blank" rel="noopener noreferrer" class="glass-card promo-card account-promo-card"><div class="promo-badge">${this.escapeHtml(accountBadge)}</div><div class="promo-content"><div class="promo-title">${this.escapeHtml(accountTitle)}</div><div class="promo-desc rich-content">${accountRendered}</div></div></a>`;
+}
 
     let promoHtml = "";
     if (promoEnabled && promoUrl) {
@@ -933,8 +915,11 @@ if (accountEnabled && accountContent) {
       promo_url: this.config.promo_url,
       promo_format: this.config.promo_format,
       account_enable: this.config.account_enable,
+      account_badge: this.config.account_badge,
+      account_title: this.config.account_title,
+      account_desc: this.config.account_desc,
+      account_url: this.config.account_url,
       account_format: this.config.account_format,
-      account_content: this.config.account_content,
       links: JSON.stringify(this.LINKS_DATA, null, 2),
       friends: JSON.stringify(this.FRIENDS_DATA, null, 2)
     };
@@ -1210,28 +1195,23 @@ if (accountEnabled && accountContent) {
               </div>
 
               <div class="field full">
-                <label>账号推广卡开关 / 配置（首页中部）</label>
-                <div class="switch-row" style="margin-bottom:12px;">
-                  <label class="switch"><input type="checkbox" id="s_account_enable"><span class="slider"></span></label>
-                  <span style="color:var(--txt-sub);font-weight:700;">启用首页账号推广卡</span>
-                </div>
-                <div class="settings-grid">
-                  <div class="field"><label>内容格式</label><select id="s_account_format"><option value="markdown">Markdown</option><option value="html">HTML</option></select></div>
-                  <div class="field">
-                    <label>快捷填充</label>
-                    <div class="field-tools" style="margin-bottom:0;">
-                      <button type="button" class="mini-btn" onclick="fillAccountMarkdownExample()">填入 Markdown 示例</button>
-                      <button type="button" class="mini-btn" onclick="fillAccountHtmlExample()">填入 HTML 示例</button>
-                    </div>
-                    <small>推荐优先使用 Markdown。想做按钮、自定义结构时用 HTML。</small>
-                  </div>
-                </div>
-                <div style="margin-top:16px;">
-                  <label style="display:block;margin-bottom:10px;font-size:.88rem;color:var(--txt-sub);font-weight:800;">推广卡内容</label>
-                  <textarea id="s_account_content" class="code" style="min-height:220px" placeholder="可直接粘贴 Markdown 或 HTML 片段"></textarea>
-                  <small>内容会直接渲染到首页中部账号推广卡。HTML 模式下请只粘贴你自己信任的代码，不要放 script。</small>
-                </div>
-              </div>
+  <label>账号推广卡开关 / 配置（首页中部）</label>
+  <div class="switch-row" style="margin-bottom:12px;">
+    <label class="switch"><input type="checkbox" id="s_account_enable"><span class="slider"></span></label>
+    <span style="color:var(--txt-sub);font-weight:700;">启用首页账号推广卡</span>
+  </div>
+  <div class="settings-grid">
+    <div class="field"><label>账号卡徽标文字</label><input type="text" id="s_account_badge" placeholder="如：账号购买"></div>
+    <div class="field"><label>账号卡标题</label><input type="text" id="s_account_title" placeholder="如：Google / Apple 外区 ID"></div>
+    <div class="field"><label>账号卡跳转链接</label><input type="text" id="s_account_url" placeholder="https://..."></div>
+    <div class="field"><label>账号卡内容格式</label><select id="s_account_format"><option value="markdown">Markdown</option><option value="html">HTML</option></select></div>
+  </div>
+  <div style="margin-top:16px;">
+    <label style="display:block;margin-bottom:10px;font-size:.88rem;color:var(--txt-sub);font-weight:800;">账号卡描述内容</label>
+    <textarea id="s_account_desc" style="min-height:150px"></textarea>
+    <small>支持 Markdown 或 HTML。显示效果与域名推广卡一致。</small>
+  </div>
+</div>
 
               <div class="field full"><label>自定义卡片跳转域名</label><input type="text" id="s_host" placeholder="如果不填，默认自动使用当前访问域名"></div>
 
@@ -1264,9 +1244,7 @@ if (accountEnabled && accountContent) {
         const SYS_SET=${this.safeScriptJson(sysSettings)};
         const LINKS_EXAMPLE=[{id:"google",name:"Google 搜索",url:"https://www.google.com",backup_url:"https://www.google.com.hk",emoji:"🔎",note:"全球常用搜索引擎",tag:"推荐"},{id:"github",name:"GitHub",url:"https://github.com",emoji:"💻",note:"代码托管与开源社区"}];
         const FRIENDS_EXAMPLE=[{id:"friend_1",name:"示例友链站点",url:"https://example.com"},{id:"friend_2",name:"另一个合作伙伴",url:"https://example.org"}];
-        const ACCOUNT_MD_EXAMPLE='Google / Apple 外区 ID / Telegram / Instagram / X\\n\\n多种类型可选 · 快速处理 · 自动发货\\n\\n[👉 立即进入购买通道](https://tgsss.com/9EB6941B)';
-        const ACCOUNT_HTML_EXAMPLE='<p><strong>Google / Apple 外区 ID / Telegram / Instagram / X</strong></p>\\n<p>多种类型可选 · 快速处理 · 自动发货</p>\\n<p><a href="https://tgsss.com/9EB6941B" target="_blank" rel="noopener noreferrer">👉 立即进入购买通道</a></p>';
-
+        
         function initAdminTheme(){
           const btn=document.querySelector('.theme-toggle');
           if(!btn) return;
@@ -1323,8 +1301,11 @@ if (accountEnabled && accountContent) {
           document.getElementById('s_promo_url').value=SYS_SET.promo_url||'';
           document.getElementById('s_promo_format').value=SYS_SET.promo_format||'markdown';
           document.getElementById('s_account_enable').checked=String(SYS_SET.account_enable||'0')==='1';
+          document.getElementById('s_account_badge').value=SYS_SET.account_badge||'';
+          document.getElementById('s_account_title').value=SYS_SET.account_title||'';
+          document.getElementById('s_account_url').value=SYS_SET.account_url||'';
           document.getElementById('s_account_format').value=SYS_SET.account_format||'markdown';
-          document.getElementById('s_account_content').value=SYS_SET.account_content||'';
+          document.getElementById('s_account_desc').value=SYS_SET.account_desc||'';
           document.getElementById('s_links').value=SYS_SET.links||'[]';
           document.getElementById('s_friends').value=SYS_SET.friends||'[]';
           document.getElementById('set-fs').classList.add('open');
@@ -1346,18 +1327,6 @@ if (accountEnabled && accountContent) {
           const el=document.getElementById('s_friends');
           if(el.value.trim()&&!confirm('当前 FRIENDS 内容不为空，确定要用示例模板覆盖吗？')) return;
           el.value=JSON.stringify(FRIENDS_EXAMPLE,null,2);
-        }
-        function fillAccountMarkdownExample(){
-            const el=document.getElementById('s_account_content');
-            if(el.value.trim()&&!confirm('当前账号推广卡内容不为空，确定要用 Markdown 示例覆盖吗？')) return;
-            document.getElementById('s_account_format').value='markdown';
-            el.value=ACCOUNT_MD_EXAMPLE;
-          }
-        function fillAccountHtmlExample(){
-          const el=document.getElementById('s_account_content');
-          if(el.value.trim()&&!confirm('当前账号推广卡内容不为空，确定要用 HTML 示例覆盖吗？')) return;
-          document.getElementById('s_account_format').value='html';
-          el.value=ACCOUNT_HTML_EXAMPLE;
         }
 
         async function saveSettings(btn){
@@ -1385,8 +1354,11 @@ if (accountEnabled && accountContent) {
             promo_url:document.getElementById('s_promo_url').value,
             promo_format:document.getElementById('s_promo_format').value,
             account_enable:document.getElementById('s_account_enable').checked?'1':'0',
+            account_badge:document.getElementById('s_account_badge').value,
+            account_title:document.getElementById('s_account_title').value,
+            account_url:document.getElementById('s_account_url').value,
             account_format:document.getElementById('s_account_format').value,
-            account_content:document.getElementById('s_account_content').value,
+            account_desc:document.getElementById('s_account_desc').value,
             links:document.getElementById('s_links').value,
             friends:document.getElementById('s_friends').value
           };
